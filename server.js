@@ -262,13 +262,13 @@ app.put('/api/wallets/:wallet_id', async (req, res) => {
 
 
 ///////////////////// Purchase Ticket
-//Define the route for purchasing tickets
+
 
 app.post('/api/tickets', async (req, res) => {
   try {
     const { wallet_id, time_after, station_from, station_to } = req.body;
 
-    // Implement your ticket purchasing logic here
+  
     // For simplicity, let's assume the user has enough balance
     // and a direct train between station_from and station_to
 
