@@ -29,6 +29,7 @@ app.post('/api/users', async (req, res) => {
         res.status(500).json({ error: 'Failed to add user' });
     }
 });
+
 app.post('/api/stations', async (req, res) => {
     try {
         const { station_id, station_name, longitude, latitude } = req.body;
@@ -51,6 +52,7 @@ app.post('/api/stations', async (req, res) => {
         res.status(500).json({ error: 'Failed to add station' });
     }
 });
+
 app.post('/api/trains', async (req, res) => {
     try {
         const { train_id, train_name, capacity, stops } = req.body;
@@ -86,8 +88,11 @@ app.post('/api/trains', async (req, res) => {
 });
 
 
+
 //////feature 1  : station
 //list all station
+
+
 
 app.get('/api/stations', async (req, res) => {
     try {
@@ -106,6 +111,9 @@ app.get('/api/stations', async (req, res) => {
 
 
 ////////list all trains at a given station
+
+
+
 
 app.get('/api/stations/:station_id/trains', async (req, res) => {
     try {
@@ -144,20 +152,179 @@ app.get('/api/stations/:station_id/trains', async (req, res) => {
                 return a.train_id - b.train_id;
             }
         });
-
+       
         // Extract relevant information for response, including arrival_time and departure_time
-        const trainList = trains.map(train => ({
-            train_id: train.train_id,
-            arrival_time: train.stops.find(stop => stop.station_id === station_id)?.arrival_time || null,
-            departure_time: train.stops.find(stop => stop.station_id === station_id)?.departure_time || null
-        }));
+        const trainList = trains.map(train => {
+            // console.log('Train:', train);
+            const station_id = parseInt(req.params.station_id);
 
+            const arrivalStop = train.stops.find(stop => stop.station_id === station_id);
+            // console.log('Arrival Stop:', arrivalStop);
+            
+            return {
+                train_id: train.train_id,
+                arrival_time: arrivalStop ? arrivalStop.arrival_time : null,
+                departure_time: arrivalStop ? arrivalStop.departure_time : null
+            };
+        });
+        
         // Return the sorted list of trains in the response
         res.status(200).json({ station_id, trains: trainList });
     } catch (error) {
         console.error(error);
         res.status(500).send('Internal Server Error');
     }
+});
+
+
+
+
+
+///// wallet////////////////
+
+
+
+app.get('/api/wallets/:wallet_id', async (req, res) => {
+    try {
+        const { wallet_id } = req.params;
+
+        // Find the user based on the wallet ID
+        const user = await User.findOne({ user_id: wallet_id });
+
+        // If the user is not found, return a 404 error
+        if (!user) {
+            return res.status(404).json({ message: `Wallet with id: ${wallet_id} was not found` });
+        }
+
+        // If the user is found, return their wallet balance along with user ID and name
+        res.status(200).json({
+            wallet_id: user.user_id,
+            balance: user.balance,
+            wallet_user: {
+                user_id: user.user_id,
+                user_name: user.user_name
+            }
+        });
+    } catch (error) {
+        console.error('Error retrieving wallet balance:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+
+
+
+//// Add Wallet Balance
+
+
+app.put('/api/wallets/:wallet_id', async (req, res) => {
+    try {
+        const { wallet_id } = req.params;
+        const { recharge } = req.body;
+
+        // Check if recharge is within the range 100 - 10000
+        if (recharge < 100 || recharge > 10000) {
+            return res.status(400).json({ message: `Invalid amount: ${recharge}` });
+        }
+
+        // Find the user by user_id
+        const user = await User.findOne({ user_id: wallet_id });
+
+        // If the user does not exist, return a 404 response
+        if (!user) {
+            return res.status(404).json({ message: `Wallet with id: ${wallet_id} was not found` });
+        }
+
+        // Add funds to the user's balance
+        user.balance += recharge;
+
+        // Save the updated user to the database
+        await user.save();
+
+        // Respond with the updated wallet data and status code 200
+        res.status(200).json({
+            wallet_id: user.user_id,
+            wallet_balance: user.balance,
+            wallet_user: {
+                user_id: user.user_id,
+                user_name: user.user_name,
+            },
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+ // Adjust the path as per your project structure
+
+// Helper function to calculate cost between two stations
+
+
+///////////////////// Purchase Ticket
+//Define the route for purchasing tickets
+
+app.post('/api/tickets', async (req, res) => {
+  try {
+    const { wallet_id, time_after, station_from, station_to } = req.body;
+
+    // Implement your ticket purchasing logic here
+    // For simplicity, let's assume the user has enough balance
+    // and a direct train between station_from and station_to
+
+    const user = await User.findOne({ user_id: wallet_id });
+    if (!user) {
+      return res.status(403).json({ message: `User not found with ID ${wallet_id}` });
+    }
+
+    const train = await Train.findOne({ 'stops.station_id': { $all: [station_from, station_to] } });
+    if (!train) {
+      return res.status(403).json({ message: `No direct train available between stations ${station_from} and ${station_to}` });
+    }
+
+    // Calculate fare based on the train's stops
+    const stops = train.stops;
+    const fare = stops.find((stop) => stop.station_id === station_to).fare;
+
+    // Check if the user has enough balance
+    if (user.balance < fare) {
+      return res.status(402).json({ message: `Insufficient balance. Recharge amount: ${fare - user.balance} to purchase the ticket` });
+    }
+
+    // Update user's balance
+    user.balance -= fare;
+    await user.save();
+
+    // Generate a basic ticket
+    const ticket = new Ticket({
+      ticket_id: Math.floor(Math.random() * 1000) + 1,
+      wallet_id,
+      balance: user.balance,
+      stations: [
+        {
+          station_id: station_from,
+          train_id: train.train_id,
+          departure_time: '11:00',
+          arrival_time: null,
+        },
+        {
+          station_id: station_to,
+          train_id: train.train_id,
+          departure_time: null,
+          arrival_time: '12:00',
+        },
+      ],
+    });
+
+    // Save the ticket to the database
+    await ticket.save();
+
+    // Send the successful response
+    res.status(201).json(ticket);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
 });
 
 
@@ -184,3 +351,4 @@ mongoose
 const User = require('./User');
 const Station = require('./Station');
 const Train = require('./Train');
+const Ticket = require('./Ticket');
